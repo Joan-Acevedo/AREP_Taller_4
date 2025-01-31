@@ -1,0 +1,41 @@
+body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    margin: 20px;
+    background-image: url('anyaHappy.jpg');
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center top;
+}
+
+.error-404 {
+    background-image: url('anyaScared.jpg') !important;
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center top;
+    height: 100vh;
+    color: white;
+}
+
+input {
+    padding: 10px;
+    margin: 10px;
+}
+
+button {
+    padding: 10px 20px;
+    background-color: #28a745;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #218838;
+}
+
+#response {
+    margin-top: 20px;
+    font-size: 18px;
+    color: #333;
+}
