@@ -2,14 +2,30 @@ package org.example;
 
 import java.io.*;
 import java.net.*;
+import java.util.*;
+import java.util.function.BiConsumer;
 
 public class HttpServer {
     private static final int PORT = 35000;
-    private static final String BASE_DIRECTORY = "web-server/src/main/java/recursos";
+    private static String baseDirectory = "web-server/src/main/java/recursos"; // Ahora es dinámico
+    private static final Map<String, BiConsumer<Request, Response>> routeHandlers = new HashMap<>();
 
     public static void main(String[] args) throws IOException {
         ServerSocket serverSocket = new ServerSocket(PORT);
         System.out.println("Servidor iniciado en el puerto " + PORT + "...");
+
+        // Definir carpeta de archivos estáticos según la especificación
+        staticfiles("web-server/src/main/java/recursos");
+
+        // Registrar la ruta REST con `get()`
+        get("/api/saludo", (req, res) -> {
+            String name = req.getValues("name").orElse("Usuario");
+            res.sendJson("{\"name\": \"" + name + "\", \"mensaje\": \"Hola, " + name + "!\"}");
+        });
+
+        // Registrar la ruta "/pi"
+        get("/pi", (req, res) -> res.sendJson(String.valueOf(Math.PI)));
+
 
         while (true) {
             try {
@@ -32,13 +48,26 @@ public class HttpServer {
         }
 
         System.out.println("Petición recibida: " + requestLine);
-        String requestedFile = requestLine.split(" ")[1];
+        String[] requestParts = requestLine.split(" ");
+        if (requestParts.length < 2) {
+            return;
+        }
 
-        // Verifica si la solicitud es para la API REST
-        if (requestedFile.startsWith("/api/saludo")) {
-            handleApiSaludo(writer, requestedFile);
+        String requestedFile = requestParts[1];
+
+        // Separar ruta y parámetros
+        String path = requestedFile.split("\\?")[0];
+        Map<String, String> params = getQueryParams(requestedFile);
+
+        // Crear `Request` y `Response`
+        Request req = new Request(path, params);
+        Response res = new Response(writer);
+
+        // Verificar si la ruta tiene un manejador registrado
+        if (routeHandlers.containsKey(path)) {
+            routeHandlers.get(path).accept(req, res);
         } else {
-            serveStaticFile(out, writer, requestedFile);
+            serveStaticFile(out, writer, path);
         }
 
         writer.flush();
@@ -46,24 +75,37 @@ public class HttpServer {
         clientSocket.close();
     }
 
-    private static void handleApiSaludo(PrintWriter writer, String requestedFile) {
-        String name = "Usuario";
-        if (requestedFile.contains("?name=")) {
-            name = requestedFile.split("\\?name=")[1].split("&")[0];
-        }
+    public static void get(String path, BiConsumer<Request, Response> handler) {
+        routeHandlers.put(path, handler);
+    }
 
-        writer.println("HTTP/1.1 200 OK");
-        writer.println("Content-Type: application/json");
-        writer.println();
-        writer.println("{\"name\": \"" + name + "\", \"mensaje\": \"Hola, " + name + "!\"}");
-        writer.flush();
+    public static void staticfiles(String path) {
+        baseDirectory = path; // Ahora la carpeta de estáticos es configurable
+        System.out.println("Archivos estáticos configurados en: " + baseDirectory);
+    }
+
+    private static Map<String, String> getQueryParams(String url) {
+        Map<String, String> params = new HashMap<>();
+        if (url.contains("?")) {
+            String[] parts = url.split("\\?");
+            if (parts.length > 1) {
+                String[] queryParams = parts[1].split("&");
+                for (String param : queryParams) {
+                    String[] keyValue = param.split("=");
+                    if (keyValue.length == 2) {
+                        params.put(keyValue[0], keyValue[1]);
+                    }
+                }
+            }
+        }
+        return params;
     }
 
     private static void serveStaticFile(OutputStream out, PrintWriter writer, String requestedFile) throws IOException {
         if (requestedFile.equals("/")) {
             requestedFile = "/index.html";
         }
-        File file = new File(BASE_DIRECTORY + requestedFile);
+        File file = new File(baseDirectory + requestedFile);
         if (file.exists() && !file.isDirectory()) {
             sendResponse(out, file);
         } else {
@@ -123,5 +165,41 @@ public class HttpServer {
         if (fileName.endsWith(".png")) return "image/png";
         if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) return "image/jpeg";
         return "application/octet-stream";
+    }
+
+    // Clase para manejar las peticiones
+    public static class Request {
+        private final String path;
+        private final Map<String, String> queryParams;
+
+        public Request(String path, Map<String, String> queryParams) {
+            this.path = path;
+            this.queryParams = queryParams;
+        }
+
+        public Optional<String> getValues(String key) {
+            return Optional.ofNullable(queryParams.get(key));
+        }
+
+        public String getPath() {
+            return path;
+        }
+    }
+
+    // Clase para manejar las respuestas
+    public static class Response {
+        private final PrintWriter writer;
+
+        public Response(PrintWriter writer) {
+            this.writer = writer;
+        }
+
+        public void sendJson(String json) {
+            writer.println("HTTP/1.1 200 OK");
+            writer.println("Content-Type: application/json");
+            writer.println();
+            writer.println(json);
+            writer.flush();
+        }
     }
 }
