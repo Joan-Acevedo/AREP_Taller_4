@@ -14,18 +14,14 @@ public class HttpServer {
         ServerSocket serverSocket = new ServerSocket(PORT);
         System.out.println("Servidor iniciado en el puerto " + PORT + "...");
 
-        // Definir carpeta de archivos estáticos según la especificación
         staticfiles("web-server/src/main/java/recursos");
 
-        // Registrar la ruta REST con `get()`
         get("/api/saludo", (req, res) -> {
             String name = req.getValues("name").orElse("Usuario");
             res.sendJson("{\"name\": \"" + name + "\", \"mensaje\": \"Hola, " + name + "!\"}");
         });
 
-        // Registrar la ruta "/pi"
         get("/pi", (req, res) -> res.sendJson(String.valueOf(Math.PI)));
-
 
         while (true) {
             try {
@@ -55,7 +51,6 @@ public class HttpServer {
 
         String requestedFile = requestParts[1];
 
-        // Separar ruta y parámetros
         String path = requestedFile.split("\\?")[0];
         Map<String, String> params = getQueryParams(requestedFile);
 
@@ -63,7 +58,6 @@ public class HttpServer {
         Request req = new Request(path, params);
         Response res = new Response(writer);
 
-        // Verificar si la ruta tiene un manejador registrado
         if (routeHandlers.containsKey(path)) {
             routeHandlers.get(path).accept(req, res);
         } else {
