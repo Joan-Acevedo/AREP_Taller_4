@@ -1,105 +1,139 @@
 package org.example;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.example.framework.GetMapping;
+import org.example.framework.RequestParam;
+import org.example.framework.RestController;
+import org.reflections.Reflections;
+
 import java.io.*;
+import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.net.*;
 import java.util.*;
-import java.util.function.BiConsumer;
 
 public class HttpServer {
     private static final int PORT = 35000;
-    private static String baseDirectory = "web-server/src/main/java/recursos"; // Ahora es dinámico
-    private static final Map<String, BiConsumer<Request, Response>> routeHandlers = new HashMap<>();
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final String BASE_DIRECTORY = "web-server/src/main/java/recursos";
+    private static final Map<String, Method> routeHandlers = new HashMap<>();
+    private static final Map<String, Object> controllerInstances = new HashMap<>();
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws Exception {
+        loadRestControllers();
+        startServer();
+    }
+
+
+    private static void startServer() throws IOException {
         ServerSocket serverSocket = new ServerSocket(PORT);
-        System.out.println("Servidor iniciado en el puerto " + PORT + "...");
-
-        staticfiles("web-server/src/main/java/recursos");
-
-        get("/api/saludo", (req, res) -> {
-            String name = req.getValues("name").orElse("Usuario");
-            res.sendJson("{\"name\": \"" + name + "\", \"mensaje\": \"Hola, " + name + "!\"}");
-        });
-
-        get("/pi", (req, res) -> res.sendJson(String.valueOf(Math.PI)));
+        System.out.println("Servidor iniciado en http://localhost:" + PORT);
 
         while (true) {
-            try {
-                Socket clientSocket = serverSocket.accept();
-                handleRequest(clientSocket);
-            } catch (IOException e) {
-                System.err.println("Error al aceptar conexión: " + e.getMessage());
+            try (Socket clientSocket = serverSocket.accept();
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+                 OutputStream out = clientSocket.getOutputStream();
+                 PrintWriter writer = new PrintWriter(out, true)) {
+
+                String requestLine = reader.readLine();
+                if (requestLine == null) continue;
+                System.out.println("Petición recibida: " + requestLine);
+
+                String[] parts = requestLine.split(" ");
+                if (parts.length < 2) continue;
+
+                String requestedFile = parts[1];
+                String path = requestedFile.split("\\?")[0];
+                Map<String, String> params = getQueryParams(requestedFile);
+
+                Request req = new Request(path, params);
+                Response res = new Response(writer);
+
+                if (routeHandlers.containsKey(path)) {
+                    Method method = routeHandlers.get(path);
+                    Object controller = controllerInstances.get(method.getDeclaringClass().getName());
+                    Object[] args = resolveMethodArguments(method, req, res, params);
+                    Object response = method.invoke(controller, args);
+                    sendResponse(writer, response);
+                } else {
+                    serveStaticFile(out, writer, path);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }
     }
 
-    private static void handleRequest(Socket clientSocket) throws IOException {
-        BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-        OutputStream out = clientSocket.getOutputStream();
-        PrintWriter writer = new PrintWriter(out, true);
+    private static void loadRestControllers() throws Exception {
+        Reflections reflections = new Reflections("org.example.controllers");
+        Set<Class<?>> controllers = reflections.getTypesAnnotatedWith(RestController.class);
 
-        String requestLine = in.readLine();
-        if (requestLine == null) {
-            return;
-        }
+        for (Class<?> controller : controllers) {
+            Object instance = controller.getDeclaredConstructor().newInstance();
+            controllerInstances.put(controller.getName(), instance);
 
-        System.out.println("Petición recibida: " + requestLine);
-        String[] requestParts = requestLine.split(" ");
-        if (requestParts.length < 2) {
-            return;
-        }
-
-        String requestedFile = requestParts[1];
-
-        String path = requestedFile.split("\\?")[0];
-        Map<String, String> params = getQueryParams(requestedFile);
-
-        // Crear `Request` y `Response`
-        Request req = new Request(path, params);
-        Response res = new Response(writer);
-
-        if (routeHandlers.containsKey(path)) {
-            routeHandlers.get(path).accept(req, res);
-        } else {
-            serveStaticFile(out, writer, path);
-        }
-
-        writer.flush();
-        in.close();
-        clientSocket.close();
-    }
-
-    public static void get(String path, BiConsumer<Request, Response> handler) {
-        routeHandlers.put(path, handler);
-    }
-
-    public static void staticfiles(String path) {
-        baseDirectory = path; // Ahora la carpeta de estáticos es configurable
-        System.out.println("Archivos estáticos configurados en: " + baseDirectory);
-    }
-
-    private static Map<String, String> getQueryParams(String url) {
-        Map<String, String> params = new HashMap<>();
-        if (url.contains("?")) {
-            String[] parts = url.split("\\?");
-            if (parts.length > 1) {
-                String[] queryParams = parts[1].split("&");
-                for (String param : queryParams) {
-                    String[] keyValue = param.split("=");
-                    if (keyValue.length == 2) {
-                        params.put(keyValue[0], keyValue[1]);
-                    }
+            for (Method method : controller.getDeclaredMethods()) {
+                if (method.isAnnotationPresent(GetMapping.class)) {
+                    String path = method.getAnnotation(GetMapping.class).value();
+                    routeHandlers.put(path, method);
+                    System.out.println("Registrado endpoint: " + path);
                 }
             }
         }
-        return params;
     }
+
+    private static Object[] resolveMethodArguments(Method method, Request req, Response res, Map<String, String> params) {
+        Parameter[] parameters = method.getParameters();
+        Object[] args = new Object[parameters.length];
+
+        for (int i = 0; i < parameters.length; i++) {
+            Parameter param = parameters[i];
+            if (param.getType().equals(Request.class)) {
+                args[i] = req;
+            } else if (param.getType().equals(Response.class)) {
+                args[i] = res;
+            } else if (param.isAnnotationPresent(RequestParam.class)) {
+                RequestParam requestParam = param.getAnnotation(RequestParam.class);
+                String paramName = requestParam.value();
+                String defaultValue = requestParam.defaultValue();
+                String paramValue = params.get(paramName);
+
+                // Si el parámetro no está en la URL o está vacío, usa el valor por defecto
+                if (paramValue == null || paramValue.isEmpty()) {
+                    paramValue = defaultValue;
+                }
+
+                // Decodifica el valor del parámetro
+                if (paramValue != null) {
+                    try {
+                        paramValue = URLDecoder.decode(paramValue, "UTF-8");
+                    } catch (UnsupportedEncodingException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                // Convertir el valor al tipo de parámetro correspondiente
+                if (param.getType().equals(String.class)) {
+                    args[i] = paramValue;
+                } else if (param.getType().equals(int.class) || param.getType().equals(Integer.class)) {
+                    args[i] = (paramValue != null) ? Integer.parseInt(paramValue) : 0;
+                } else if (param.getType().equals(double.class) || param.getType().equals(Double.class)) {
+                    args[i] = (paramValue != null) ? Double.parseDouble(paramValue) : 0.0;
+                } else {
+                    args[i] = null;
+                }
+            }
+        }
+        return args;
+    }
+
+
 
     private static void serveStaticFile(OutputStream out, PrintWriter writer, String requestedFile) throws IOException {
         if (requestedFile.equals("/")) {
             requestedFile = "/index.html";
         }
-        File file = new File(baseDirectory + requestedFile);
+        File file = new File(BASE_DIRECTORY + requestedFile);
         if (file.exists() && !file.isDirectory()) {
             sendResponse(out, file);
         } else {
@@ -109,9 +143,7 @@ public class HttpServer {
 
     private static void sendResponse(OutputStream out, File file) throws IOException {
         String contentType = getContentType(file.getName());
-        FileInputStream fileInputStream = new FileInputStream(file);
-        byte[] fileData = fileInputStream.readAllBytes();
-        fileInputStream.close();
+        byte[] fileData = new FileInputStream(file).readAllBytes();
 
         PrintWriter writer = new PrintWriter(out, true);
         writer.println("HTTP/1.1 200 OK");
@@ -119,9 +151,25 @@ public class HttpServer {
         writer.println("Content-Length: " + fileData.length);
         writer.println();
         writer.flush();
-
         out.write(fileData);
         out.flush();
+    }
+
+    private static void sendResponse(PrintWriter writer, Object response) throws IOException {
+        if (response instanceof String) {
+            writer.println("HTTP/1.1 200 OK");
+            writer.println("Content-Type: text/plain");
+            writer.println("Content-Length: " + ((String) response).length());
+            writer.println();
+            writer.println(response);
+        } else {
+            String jsonResponse = objectMapper.writeValueAsString(response);
+            writer.println("HTTP/1.1 200 OK");
+            writer.println("Content-Type: application/json");
+            writer.println("Content-Length: " + jsonResponse.length());
+            writer.println();
+            writer.println(jsonResponse);
+        }
     }
 
     private static void sendNotFound(OutputStream out) throws IOException {
@@ -161,8 +209,26 @@ public class HttpServer {
         return "application/octet-stream";
     }
 
-    // Clase para manejar las peticiones
-    public static class Request {
+    private static Map<String, String> getQueryParams(String url) {
+        Map<String, String> params = new HashMap<>();
+        if (url.contains("?")) {
+            String[] parts = url.split("\\?");
+            if (parts.length > 1) {
+                String[] queryParams = parts[1].split("&");
+                for (String param : queryParams) {
+                    String[] keyValue = param.split("=");
+                    if (keyValue.length == 2) {
+                        params.put(keyValue[0], keyValue[1]);
+                    }
+                }
+            }
+        }
+        return params;
+    }
+
+
+
+public static class Request {
         private final String path;
         private final Map<String, String> queryParams;
 
@@ -180,7 +246,6 @@ public class HttpServer {
         }
     }
 
-    // Clase para manejar las respuestas
     public static class Response {
         private final PrintWriter writer;
 
@@ -188,7 +253,8 @@ public class HttpServer {
             this.writer = writer;
         }
 
-        public void sendJson(String json) {
+        public void sendJson(Object object) throws IOException {
+            String json = objectMapper.writeValueAsString(object);
             writer.println("HTTP/1.1 200 OK");
             writer.println("Content-Type: application/json");
             writer.println();

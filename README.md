@@ -22,6 +22,19 @@ El servidor escucha peticiones en el **puerto 35000** y responde tanto a solicit
 
 ---
 
+## Desarrollo del laboratorio
+
+### Parte I
+
+Teniendo como base el Servidor Web que hemos venido trabajando, podemos omitir los 4 primeros pasos de la parte I.
+
+En el paso #5 nos piden actualizar las dependencias para poder construir una imagen de contenedor de docker, así que
+procedemos a hacer esto, dejando como resultado la siguiente sección de código en el `pom.xml`:
+
+
+
+---
+
 ## Instalación
 
 ### **1. Prerrequisitos**

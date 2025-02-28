@@ -7,12 +7,13 @@ function sendRequest() {
     }
 
     fetch(`/api/saludo?name=${encodeURIComponent(name)}`)
-        .then(response => response.json())
+        .then(response => response.text())
         .then(data => {
-            document.getElementById("response").innerText = `Hola, ${data.name}!`;
+            document.getElementById("response").innerText = data;
         })
         .catch(error => {
             console.error("Error en la petición:", error);
             document.getElementById("response").innerText = "Error al obtener la respuesta.";
         });
+
 }
