@@ -31,7 +31,31 @@ Teniendo como base el Servidor Web que hemos venido trabajando, podemos omitir l
 En el paso #5 nos piden actualizar las dependencias para poder construir una imagen de contenedor de docker, así que
 procedemos a hacer esto, dejando como resultado la siguiente sección de código en el `pom.xml`:
 
+![Image](https://github.com/user-attachments/assets/55899e9b-6753-4be9-bfef-0a9e0bb9d0c9)
 
+Ahora en el paso #6 nos piden asegurarnos que el proyecto compila, para eso ingresamos el siguiente comando en la terminal:
+
+```ssh
+mvn clean install
+```
+
+Obteniendo como resultado satisfactorio:
+
+![Image](https://github.com/user-attachments/assets/c6a999e8-60c3-44db-a6a4-17a000820f15)
+
+En el paso #7 nos piden verificar el archivo que almacena las dependencias:
+
+![Image](https://github.com/user-attachments/assets/7c693e1a-0083-4f57-b0d0-2420bcb28e89)
+
+Y finalmente el paso #8 ejecutamos el programa con el comando:
+
+```ssh
+java -cp "target/classes;target/dependency/*" org.example.HttpServer
+```
+
+Obteniedo como resultado:
+
+![Image](https://github.com/user-attachments/assets/0d5fb236-d34d-475e-87f5-79c4fc50a431)
 
 ---
 
@@ -46,7 +70,7 @@ Para ejecutar este proyecto, asegúrate de tener instalado lo siguiente:
 ### **2. Clonar el Repositorio**
 Abre una terminal y ejecuta el siguiente comando para clonar el proyecto:
 ```sh
-    git clone https://github.com/Joan-Acevedo/AREP_Taller_2.git
+    git clone https://github.com/Joan-Acevedo/AREP_Taller_4.git
 ```
 
 ### **3. Compilar el Proyecto**
